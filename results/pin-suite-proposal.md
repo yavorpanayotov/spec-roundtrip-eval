@@ -2,7 +2,9 @@
 
 **Author:** Yavor Panayotov
 **Date:** 2026-07-09
-**Status:** Draft
+**Status:** Draft — frozen here as an output of the round-trip experiment. Once
+submitted to [Allium's proposal process](https://github.com/juxt/allium), the
+version there is canonical and this copy is historical.
 **Scope:** Skills and workflow only (`distill`, `propagate`, the `allium` loop,
 `recommended-loops.md`). **No language change.** Applies to the **code-first flow
 only** — and fully only when the distillation feeds a rewrite. Greenfield
