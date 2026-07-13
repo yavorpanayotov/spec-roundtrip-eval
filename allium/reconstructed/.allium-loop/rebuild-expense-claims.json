@@ -1,0 +1,26 @@
+{
+  "goal": "Rebuild expense-claims application from specs/expense-claims.allium. Stack: Vaadin Flow, jOOQ, Flyway, H2, Maven, JUnit 5.",
+  "mode": "spec-first (spec existed, no code; skipped elicit)",
+  "tick": 2,
+  "phase": "converged",
+  "lastVerdicts": {
+    "alliumCheck": "clean (1 benign warning: external User import hint; 2 info: unused User.email / ExpenseClaim.created_at)",
+    "alliumAnalyse": "no findings",
+    "tests": "89/89 pass (red-first confirmed: 88/89 failed against stub before implementation)",
+    "weed": "clean after fix — 1 divergence found (ClaimDetail exposed derived requires_receipt not listed in spec exposes) resolved by tending the spec (added item.requires_receipt); remaining findings classified intentional-gap/aligned"
+  },
+  "completedSubGoals": [
+    "scaffold: pom.xml (Vaadin 24.7.4 / jOOQ 3.20.3 / Flyway 11.8.2 / H2 / JUnit 5.12.2, war packaging), Flyway V1 schema + V2 seed users, jOOQ codegen from DDL",
+    "propagate: 89 JUnit 5 integration tests from 81 allium-plan obligations (rules, transitions, when-presence, derived, config, invariants-as-assertions, surfaces)",
+    "implement: ExpenseService (all 10 rules + claimsVisibleTo/claimDetail/availableActions), all tests green",
+    "ui: Vaadin Flow LoginView (demo user picker), MainLayout, ClaimsListView, ClaimDetailView; smoke-tested on Jetty :8090 (0 exceptions)",
+    "verify: tests + weed + allium analyse; spec tended per weed finding"
+  ],
+  "parkedOpenQuestions": [
+    "Claim detail reachable for any claim by any signed-in user while list is role-filtered — implemented as specified (open detail access).",
+    "Reimbursement has no self-decision guard — implemented as specified (test documents it).",
+    "Withdrawn claim can never be deleted (ever-submitted marker persists) — implemented as specified.",
+    "Only lifecycle actions audited; creation/deletion/item changes leave no trail — implemented as specified."
+  ],
+  "notes": "Not a git repo; .gitignore handling skipped. Port 8080 occupied by another Java process (likely the original app the spec was distilled from) — rebuild runs on 8090 via mvn jetty:run -Djetty.http.port=8090."
+}

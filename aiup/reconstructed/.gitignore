@@ -1,0 +1,18 @@
+target/
+data/
+.playwright-mcp/
+
+# Vaadin generated frontend artifacts
+src/main/frontend/generated/
+src/main/frontend/index.html
+node_modules/
+package.json
+package-lock.json
+vite.config.ts
+vite.generated.ts
+types.d.ts
+tsconfig.json
+.vaadin/
+
+.idea/
+*.iml

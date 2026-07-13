@@ -1,0 +1,24 @@
+{
+  "goal": "reverse engineer the codebase",
+  "mode": "code-first",
+  "tick": 2,
+  "phase": "converged",
+  "spec": "specs/expense-claims.allium",
+  "lastVerdicts": {
+    "alliumCheck": "clean (1 expected warning: external User has no governing import; 2 info: unused fields kept deliberately)",
+    "alliumAnalyse": "0 findings",
+    "tests": "39/39 pass (ClaimServiceTest 23, ExpenseClaimsSpecTest 16)",
+    "weed": "clean after tick-2 tend (trimming, non-blank guards, expense_date granularity folded into spec); remaining gaps confirmed intentional (list ordering, not-found errors, null-category boundary check)"
+  },
+  "parkedOpenQuestions": [
+    "Claim detail reachable for any claim by any signed-in user; list is role-filtered — intentional?",
+    "No self-decision guard on reimbursement (finance can reimburse own approved claim) — intentional?",
+    "Withdrawn claims permanently undeletable (ever-submitted marker persists) — intentional?",
+    "Only lifecycle actions audited; creation/deletion/item changes leave no trail — intentional?"
+  ],
+  "completedSubGoals": [
+    "distill specs/expense-claims.allium",
+    "propagate src/test/java/com/example/expenses/service/ExpenseClaimsSpecTest.java (81 plan obligations mapped; gaps filled, B01-B23 referenced)",
+    "weed audit -> tend spec (3 divergences fixed) -> re-propagate (S16) -> verify green"
+  ]
+}

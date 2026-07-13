@@ -1,0 +1,30 @@
+@startuml Use Cases Overview
+left to right direction
+
+actor "Employee" as employee
+actor "Manager" as manager
+actor "Finance Officer" as finance
+
+manager --|> employee
+finance --|> employee
+
+rectangle "Expense Claims" {
+    usecase "UC-001\nSign In" as UC001
+    usecase "UC-002\nManage Expense Claim" as UC002
+    usecase "UC-003\nSubmit Claim for Review" as UC003
+    usecase "UC-004\nReview Submitted Claim" as UC004
+    usecase "UC-005\nReimburse Claim" as UC005
+    usecase "UC-006\nTrack Claims" as UC006
+}
+
+employee --> UC001
+employee --> UC002
+employee --> UC003
+employee --> UC006
+
+manager --> UC004
+
+finance --> UC004
+finance --> UC005
+
+@enduml

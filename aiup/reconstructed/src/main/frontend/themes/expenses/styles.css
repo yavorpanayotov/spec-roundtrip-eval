@@ -1,0 +1,5 @@
+/* Expense Claims theme (Lumo based). */
+
+html {
+    --lumo-primary-color: hsl(214, 76%, 43%);
+}

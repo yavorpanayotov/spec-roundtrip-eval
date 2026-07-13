@@ -1,0 +1,23 @@
+# Internal comms drafts — never publish
+comms/
+
+# Build output
+target/
+node_modules/
+
+# Vaadin generated frontend (regenerates via prepare-frontend)
+src/main/frontend/generated/
+*/src/main/frontend/generated/
+.vaadin/
+vite.generated.ts
+
+# Local databases (created on app run)
+data/
+*.mv.db
+*.lock.db
+*.trace.db
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store

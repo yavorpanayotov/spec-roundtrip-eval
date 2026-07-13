@@ -1,0 +1,306 @@
+-- allium: 3
+-- expense-claims.allium
+--
+-- Distilled from the Expense Claims application (Spring Boot / Vaadin).
+--
+-- Scope: the expense claim lifecycle — creation, itemisation, submission,
+-- approval/rejection, reimbursement, and the audit trail of decisions.
+-- Includes: User (external), ExpenseClaim, ExpenseItem, DecisionLogEntry
+-- Excludes:
+--   - Authentication and sessions (sign-in is a demo user picker by design;
+--     the application demonstrates role-based authorization, not authentication)
+--   - User management (users are seeded reference data; the application never
+--     creates or modifies them)
+--   - UI layout, persistence and framework concerns
+
+config {
+    receipt_required_over: Decimal = 50.00        -- EUR; items above this need a receipt
+    manager_approval_limit: Decimal = 5000.00     -- EUR; claims above this need finance
+}
+
+-- Users exist before the system runs and are never written by it.
+external entity User {
+    name: String
+    email: String
+    role: employee | manager | finance
+}
+
+entity ExpenseClaim {
+    -- Fields
+    owner: User
+    title: String
+    status: draft | submitted | approved | rejected | reimbursed
+    created_at: Timestamp
+    submitted_at: Timestamp?      -- set on every submission and never cleared;
+                                  -- records that the claim has *ever* been submitted
+    decided_at: Timestamp when status = approved | rejected | reimbursed
+    reimbursed_at: Timestamp when status = reimbursed
+    decision_reason: String when status = rejected
+
+    -- Relationships
+    items: ExpenseItem with claim = this
+    decisions: DecisionLogEntry with claim = this
+
+    -- Derived
+    total: sum(items, i => i.amount)
+    has_been_submitted: submitted_at != null
+    is_editable: status in {draft, rejected}
+
+    transitions status {
+        draft -> submitted
+        rejected -> submitted        -- resubmission after rejection
+        submitted -> draft           -- withdrawal
+        submitted -> approved
+        submitted -> rejected
+        approved -> reimbursed
+        terminal: reimbursed
+    }
+}
+
+entity ExpenseItem {
+    claim: ExpenseClaim
+    category: travel | meals | accommodation | equipment | other
+    description: String
+    amount: Decimal
+    expense_date: Timestamp       -- date-granular (a calendar date); the
+                                  -- future-date guard compares whole days
+    has_receipt: Boolean
+
+    requires_receipt: amount > config.receipt_required_over
+}
+
+-- Append-only audit trail of lifecycle actions on a claim.
+-- Claim creation, deletion and item changes are not recorded.
+entity DecisionLogEntry {
+    claim: ExpenseClaim
+    actor: User
+    action: submitted | withdrawn | approved | rejected | reimbursed
+    occurred_at: Timestamp
+    reason: String?               -- only rejections carry a reason
+}
+
+-- ---- Claim lifecycle ----
+
+rule UserCreatesClaim {
+    when: CreateClaim(actor, title)
+    requires: trim(title) != ""
+    ensures: ExpenseClaim.created(
+        owner: actor,
+        title: trim(title),
+        status: draft,
+        created_at: now
+    )
+}
+
+rule OwnerSubmitsClaim {
+    when: SubmitClaim(actor, claim)
+    requires: actor = claim.owner
+    requires: claim.status = draft or claim.status = rejected
+    requires: claim.items.count >= 1
+    requires: claim.items.all(i => i.has_receipt or not i.requires_receipt)
+    -- decided_at and decision_reason cease to exist on resubmission
+    -- (their presence is tied to the approved/rejected states)
+    ensures: claim.status = submitted
+    ensures: claim.submitted_at = now
+    ensures: DecisionLogEntry.created(
+        claim: claim, actor: actor, action: submitted, occurred_at: now)
+}
+
+rule OwnerWithdrawsClaim {
+    when: WithdrawClaim(actor, claim)
+    requires: actor = claim.owner
+    requires: claim.status = submitted
+    -- submitted_at is retained: a withdrawn claim has still "ever been submitted"
+    ensures: claim.status = draft
+    ensures: DecisionLogEntry.created(
+        claim: claim, actor: actor, action: withdrawn, occurred_at: now)
+}
+
+rule OwnerDeletesClaim {
+    when: DeleteClaim(actor, claim)
+    requires: actor = claim.owner
+    requires: claim.status = draft
+    requires: not claim.has_been_submitted
+    ensures:
+        for item in claim.items:
+            not exists item
+    ensures: not exists claim
+}
+
+rule ApproverApprovesClaim {
+    when: ApproveClaim(actor, claim)
+    requires: claim.status = submitted
+    requires: actor.role != employee
+    requires: actor != claim.owner
+    requires: claim.total <= config.manager_approval_limit or actor.role = finance
+    ensures: claim.status = approved
+    ensures: claim.decided_at = now
+    ensures: DecisionLogEntry.created(
+        claim: claim, actor: actor, action: approved, occurred_at: now)
+}
+
+rule ApproverRejectsClaim {
+    when: RejectClaim(actor, claim, reason)
+    requires: claim.status = submitted
+    requires: actor.role != employee
+    requires: actor != claim.owner
+    requires: trim(reason) != ""
+    ensures: claim.status = rejected
+    ensures: claim.decided_at = now
+    ensures: claim.decision_reason = trim(reason)
+    ensures: DecisionLogEntry.created(
+        claim: claim, actor: actor, action: rejected, occurred_at: now, reason: trim(reason))
+}
+
+rule FinanceReimbursesClaim {
+    when: ReimburseClaim(actor, claim)
+    requires: actor.role = finance
+    requires: claim.status = approved
+    ensures: claim.status = reimbursed
+    ensures: claim.reimbursed_at = now
+    ensures: DecisionLogEntry.created(
+        claim: claim, actor: actor, action: reimbursed, occurred_at: now)
+}
+
+-- ---- Items ----
+
+rule OwnerAddsItem {
+    when: AddItem(actor, claim, category, description, amount, expense_date, has_receipt)
+    requires: actor = claim.owner
+    requires: claim.is_editable
+    requires: trim(description) != ""
+    requires: amount > 0
+    requires: expense_date <= now
+    ensures: ExpenseItem.created(
+        claim: claim,
+        category: category,
+        description: trim(description),
+        amount: amount,
+        expense_date: expense_date,
+        has_receipt: has_receipt
+    )
+}
+
+rule OwnerUpdatesItem {
+    when: UpdateItem(actor, item, category, description, amount, expense_date, has_receipt)
+    requires: actor = item.claim.owner
+    requires: item.claim.is_editable
+    requires: trim(description) != ""
+    requires: amount > 0
+    requires: expense_date <= now
+    ensures: item.category = category
+    ensures: item.description = trim(description)
+    ensures: item.amount = amount
+    ensures: item.expense_date = expense_date
+    ensures: item.has_receipt = has_receipt
+}
+
+rule OwnerRemovesItem {
+    when: RemoveItem(actor, item)
+    requires: actor = item.claim.owner
+    requires: item.claim.is_editable
+    ensures: not exists item
+}
+
+-- ---- Invariants ----
+
+invariant PositiveItemAmounts {
+    for item in ExpenseItems:
+        item.amount > 0
+}
+
+invariant SubmittedClaimsHaveItems {
+    for claim in ExpenseClaims:
+        claim.status in {submitted, approved, reimbursed} implies claim.items.count >= 1
+}
+
+invariant ReceiptsPresentOnceSubmitted {
+    for claim in ExpenseClaims:
+        claim.status in {submitted, approved, reimbursed} implies
+            claim.items.all(i => i.has_receipt or not i.requires_receipt)
+}
+
+-- ---- Surfaces ----
+
+surface ClaimsList {
+    facing viewer: User
+
+    context claim: ExpenseClaim where
+        owner = viewer
+        or (viewer.role = manager and status = submitted)
+        or (viewer.role = finance and status in {submitted, approved, reimbursed})
+
+    exposes:
+        claim.title
+        claim.owner.name
+        claim.status
+        claim.total
+        claim.submitted_at
+
+    provides:
+        CreateClaim(viewer, title)
+
+    related:
+        ClaimDetail(claim)
+
+    @guarantee RoleScopedVisibility
+        -- Employees see only their own claims. Managers additionally see all
+        -- submitted claims. Finance additionally sees all submitted, approved
+        -- and reimbursed claims.
+}
+
+surface ClaimDetail {
+    facing viewer: User
+
+    context claim: ExpenseClaim
+
+    exposes:
+        claim.title
+        claim.status
+        claim.total
+        claim.decision_reason when claim.status = rejected
+        for item in claim.items:
+            item.category
+            item.description
+            item.amount
+            item.expense_date
+            item.has_receipt
+        for entry in claim.decisions:
+            entry.action
+            entry.actor.name
+            entry.occurred_at
+            entry.reason
+
+    provides:
+        SubmitClaim(viewer, claim)
+            when viewer = claim.owner and claim.is_editable
+        WithdrawClaim(viewer, claim)
+            when viewer = claim.owner and claim.status = submitted
+        DeleteClaim(viewer, claim)
+            when viewer = claim.owner and claim.status = draft
+                and not claim.has_been_submitted
+        ApproveClaim(viewer, claim)
+            when claim.status = submitted and viewer.role != employee
+                and viewer != claim.owner
+        RejectClaim(viewer, claim, reason)
+            when claim.status = submitted and viewer.role != employee
+                and viewer != claim.owner
+        ReimburseClaim(viewer, claim)
+            when claim.status = approved and viewer.role = finance
+        AddItem(viewer, claim, category, description, amount, expense_date, has_receipt)
+            when viewer = claim.owner and claim.is_editable
+        UpdateItem(viewer, item, category, description, amount, expense_date, has_receipt)
+            when viewer = claim.owner and claim.is_editable
+        RemoveItem(viewer, item)
+            when viewer = claim.owner and claim.is_editable
+}
+
+-- ---- Open questions ----
+
+open question "Claim detail is reachable for any claim by any signed-in user, while the claims list is role-filtered. Should detail visibility match the list's role-scoped visibility, or is open detail access intentional?"
+
+open question "Reimbursement has no self-decision guard: a finance user can reimburse their own claim once someone else has approved it. Approve/reject forbid deciding on your own claim — is the asymmetry intentional?"
+
+open question "A withdrawn claim returns to draft but can never be deleted, because the ever-submitted marker persists. Is permanent undeletability after first submission intentional?"
+
+open question "Only lifecycle actions (submit, withdraw, approve, reject, reimburse) are recorded in the decision log. Claim creation, deletion and item changes leave no audit trail — intentional?"
